@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Delta-Sync Instant Aha Demo</title>
+    <style>
+      :root {
+        --bg: #09121d;
+        --panel: #13273d;
+        --text: #e8f2ff;
+        --muted: #9db3ca;
+        --good: #26d07a;
+        --bad: #ff6b6b;
+        --edge: #335676;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top, #1c395b, #09121d 62%);
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 32px 20px 96px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 2rem;
+      }
+      .sub {
+        margin-top: 8px;
+        color: var(--muted);
+      }
+      .bar {
+        margin-top: 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .toggle {
+        border: 1px solid var(--edge);
+        border-radius: 999px;
+        background: #102338;
+        color: var(--text);
+        padding: 8px 14px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .pill {
+        border-radius: 999px;
+        padding: 4px 10px;
+        border: 1px solid var(--edge);
+        font-size: 0.78rem;
+      }
+      .on { color: var(--good); }
+      .off { color: var(--bad); }
+      .grid {
+        display: grid;
+        gap: 14px;
+        margin-top: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .card {
+        background: color-mix(in srgb, var(--panel), transparent 7%);
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+      }
+      .stat {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 6px;
+      }
+      .k { color: var(--muted); }
+      .big {
+        margin-top: 10px;
+        font-size: 1.7rem;
+        font-weight: 700;
+      }
+      #dev-panel {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        width: 285px;
+        border: 1px solid var(--edge);
+        background: #111b30;
+        border-radius: 12px;
+        box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 12px;
+        padding: 12px;
+      }
+      #dev-title {
+        color: #7ed1ff;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      code {
+        font-family: "IBM Plex Mono", monospace;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 2px 5px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Stop sending 42KB every 5 seconds</h1>
+      <div class="sub">Click the toggle and watch network behavior change immediately.</div>
+
+      <div class="bar">
+        <button id="toggle" class="toggle">Toggle Delta-Sync ON/OFF</button>
+        <span id="mode-pill" class="pill on">Delta-Sync ON</span>
+        <span id="endpoint-pill" class="pill">GET /api/dashboard</span>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Current Request</h2>
+          <div class="stat"><span class="k">Status</span><span id="status">-</span></div>
+          <div class="stat"><span class="k">Mode</span><span id="transport">idle</span></div>
+          <div class="stat"><span class="k">Endpoint</span><span id="endpoint">-</span></div>
+          <div class="big" id="last-bytes">0 B</div>
+        </div>
+
+        <div class="card">
+          <h2>Delta-Sync Session</h2>
+          <div class="stat"><span class="k">Full / Patch / 304</span><span id="breakdown">0 / 0 / 0</span></div>
+          <div class="stat"><span class="k">Actual Bytes</span><span id="actual">0 B</span></div>
+          <div class="stat"><span class="k">Would-be Full</span><span id="equiv">0 B</span></div>
+          <div class="big" id="saved-pct">0%</div>
+        </div>
+
+        <div class="card">
+          <h2>Full Polling Session</h2>
+          <div class="stat"><span class="k">Requests</span><span id="full-req">0</span></div>
+          <div class="stat"><span class="k">Bytes</span><span id="full-bytes">0 B</span></div>
+          <div class="stat"><span class="k">Latest Active Users</span><span id="active-users">-</span></div>
+          <div class="big" id="revenue">-</div>
+        </div>
+      </div>
+
+      <div class="sub" style="margin-top:14px;">
+        Tip: open DevTools Network and filter <code>dashboard</code>. Toggle OFF to hit <code>/api/dashboard-full</code>, then ON for <code>/api/dashboard</code>.
+      </div>
+    </div>
+
+    <div id="dev-panel">
+      <div id="dev-title">Delta-Sync Dev Panel</div>
+      <div>Mode: <span id="dev-mode">idle</span></div>
+      <div id="dev-full">Full: 0 B</div>
+      <div id="dev-patch">Patch: 0 B</div>
+      <div id="dev-saved">Saved: 0%</div>
+    </div>
+
+    <script>
+      const POLL_MS = 1800;
+
+      const state = {
+        deltaEnabled: true,
+        etag: null,
+        snapshot: null,
+        delta: {
+          full: 0,
+          patch: 0,
+          notModified: 0,
+          actualBytes: 0,
+          equivalentBytes: 0,
+          lastKnownFull: 0,
+          lastFullBytes: 0,
+          lastPatchBytes: 0,
+          mode: 'idle',
+        },
+        full: {
+          requests: 0,
+          bytes: 0,
+        },
+        current: {
+          status: '-',
+          endpoint: '-',
+          bytes: 0,
+        },
+      };
+
+      const formatBytes = (n) => {
+        if (n < 1024) return `${n} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+      };
+
+      const decodeToken = (token) => token.replace(/~1/g, '/').replace(/~0/g, '~');
+      const splitPath = (path) => path.split('/').slice(1).map(decodeToken);
+
+      function getContainer(doc, tokens) {
+        let node = doc;
+        for (let i = 0; i < tokens.length - 1; i += 1) {
+          node = Array.isArray(node) ? node[Number(tokens[i])] : node[tokens[i]];
+        }
+        return node;
+      }
+
+      function removeAt(doc, path) {
+        const tokens = splitPath(path);
+        if (!tokens.length) return undefined;
+        const parent = getContainer(doc, tokens);
+        const leaf = tokens[tokens.length - 1];
+        if (Array.isArray(parent)) {
+          return parent.splice(Number(leaf), 1)[0];
+        }
+        const prev = parent[leaf];
+        delete parent[leaf];
+        return prev;
+      }
+
+      function setAt(doc, path, value, mode) {
+        const tokens = splitPath(path);
+        if (!tokens.length) return value;
+        const parent = getContainer(doc, tokens);
+        const leaf = tokens[tokens.length - 1];
+        if (Array.isArray(parent)) {
+          const idx = leaf === '-' ? parent.length : Number(leaf);
+          if (mode === 'add') parent.splice(idx, 0, value);
+          else parent[idx] = value;
+        } else {
+          parent[leaf] = value;
+        }
+        return doc;
+      }
+
+      function applyPatch(snapshot, ops) {
+        let doc = structuredClone(snapshot);
+        for (const op of ops) {
+          if (op.op === 'remove') {
+            removeAt(doc, op.path);
+          } else if (op.op === 'add' || op.op === 'replace') {
+            doc = setAt(doc, op.path, op.value, op.op);
+          } else if (op.op === 'move') {
+            const moved = removeAt(doc, op.from);
+            doc = setAt(doc, op.path, moved, 'add');
+          }
+        }
+        return doc;
+      }
+
+      function render() {
+        const saved = Math.max(0, state.delta.equivalentBytes - state.delta.actualBytes);
+        const savedPct = state.delta.equivalentBytes > 0
+          ? Math.round((saved / state.delta.equivalentBytes) * 100)
+          : 0;
+
+        document.getElementById('status').textContent = state.current.status;
+        document.getElementById('transport').textContent = state.delta.mode;
+        document.getElementById('endpoint').textContent = state.current.endpoint;
+        document.getElementById('last-bytes').textContent = formatBytes(state.current.bytes);
+
+        document.getElementById('breakdown').textContent = `${state.delta.full} / ${state.delta.patch} / ${state.delta.notModified}`;
+        document.getElementById('actual').textContent = formatBytes(state.delta.actualBytes);
+        document.getElementById('equiv').textContent = formatBytes(state.delta.equivalentBytes);
+        document.getElementById('saved-pct').textContent = `${savedPct}%`;
+
+        document.getElementById('full-req').textContent = String(state.full.requests);
+        document.getElementById('full-bytes').textContent = formatBytes(state.full.bytes);
+
+        if (state.snapshot) {
+          document.getElementById('active-users').textContent = String(state.snapshot.activeUsers);
+          document.getElementById('revenue').textContent = `$${Number(state.snapshot.revenue).toLocaleString()}`;
+        }
+
+        const modeLabel = state.deltaEnabled ? 'Delta-Sync ON' : 'Delta-Sync OFF';
+        const endpointLabel = state.deltaEnabled ? 'GET /api/dashboard' : 'GET /api/dashboard-full';
+        const pill = document.getElementById('mode-pill');
+        pill.textContent = modeLabel;
+        pill.className = `pill ${state.deltaEnabled ? 'on' : 'off'}`;
+        document.getElementById('endpoint-pill').textContent = endpointLabel;
+
+        document.getElementById('dev-mode').textContent = state.delta.mode;
+        document.getElementById('dev-full').textContent = `Full: ${formatBytes(state.delta.lastFullBytes)}`;
+        document.getElementById('dev-patch').textContent = `Patch: ${formatBytes(state.delta.lastPatchBytes)}`;
+        document.getElementById('dev-saved').textContent = `Saved: ${savedPct}%`;
+      }
+
+      async function pollOnce() {
+        const endpoint = state.deltaEnabled ? '/api/dashboard' : '/api/dashboard-full';
+        const headers = state.deltaEnabled
+          ? { Accept: 'application/json-patch+json' }
+          : { Accept: 'application/json' };
+
+        if (state.deltaEnabled && state.etag) {
+          headers['If-None-Match'] = state.etag;
+        }
+
+        const response = await fetch(endpoint, { headers });
+        state.current.status = String(response.status);
+        state.current.endpoint = endpoint;
+
+        if (response.status === 304) {
+          state.current.bytes = 0;
+          state.delta.notModified += 1;
+          state.delta.mode = 'not-modified';
+          state.delta.equivalentBytes += state.delta.lastKnownFull;
+          return;
+        }
+
+        const contentType = response.headers.get('content-type') ?? '';
+        const bodyText = await response.text();
+        const bytes = new TextEncoder().encode(bodyText).length;
+        state.current.bytes = bytes;
+
+        if (!state.deltaEnabled) {
+          state.delta.mode = 'full';
+          state.delta.lastFullBytes = bytes;
+          state.delta.lastPatchBytes = 0;
+          state.snapshot = JSON.parse(bodyText);
+          state.full.requests += 1;
+          state.full.bytes += bytes;
+          return;
+        }
+
+        if (contentType.includes('json-patch+json') && state.snapshot) {
+          const ops = JSON.parse(bodyText);
+          state.snapshot = applyPatch(state.snapshot, ops);
+          state.delta.patch += 1;
+          state.delta.mode = 'patch';
+          state.delta.lastPatchBytes = bytes;
+          const fullSize = Number.parseInt(response.headers.get('x-delta-full-size') || '0', 10);
+          state.delta.lastFullBytes = fullSize;
+          state.delta.lastKnownFull = fullSize || state.delta.lastKnownFull;
+          state.delta.actualBytes += bytes;
+          state.delta.equivalentBytes += fullSize;
+        } else {
+          state.snapshot = JSON.parse(bodyText);
+          state.delta.full += 1;
+          state.delta.mode = (response.headers.get('x-delta-sync') || 'full');
+          state.delta.lastFullBytes = bytes;
+          state.delta.lastKnownFull = bytes;
+          state.delta.lastPatchBytes = 0;
+          state.delta.actualBytes += bytes;
+          state.delta.equivalentBytes += bytes;
+        }
+
+        state.etag = response.headers.get('etag');
+      }
+
+      document.getElementById('toggle').addEventListener('click', () => {
+        state.deltaEnabled = !state.deltaEnabled;
+        state.etag = null;
+        state.delta.mode = state.deltaEnabled ? 'idle' : 'full';
+      });
+
+      async function tick() {
+        try {
+          await pollOnce();
+        } catch {
+          state.delta.mode = 'error';
+        }
+        render();
+      }
+
+      tick();
+      setInterval(tick, POLL_MS);
+    </script>
+  </body>
+</html>
