@@ -75,7 +75,8 @@ Sample run (`polls=12`, `interval=600ms`):
 | Metric | Baseline | Delta-Sync |
 | --- | ---: | ---: |
 | Bytes transferred | 800,936 B | 66,995 B |
-| Payload saved | - | 734,473 B (91.6%) |
+| Equivalent full bytes | 800,936 B | 801,468 B |
+| Payload saved | 0 B (0.0%) | 734,473 B (91.6%) |
 | Avg latency | 8.7 ms | 7.7 ms |
 | P95 latency | 32.9 ms | 19.0 ms |
 | Client CPU time | 142.9 ms | 59.4 ms |
