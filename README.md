@@ -8,6 +8,7 @@
 # Stop sending 42KB every 5 seconds
 
 Delta-Sync reduces API bandwidth by 90-99% without WebSockets.
+Positioning: **Drop-in delta-sync layer for REST APIs**.
 
 ## Why Delta-Sync
 
@@ -49,14 +50,19 @@ const { data } = useDeltaSync('/api/dashboard')
 
 ## Benchmark Proof
 
-```text
-Full: 1  Patch: 11  304: 8
-Would have sent: 860.2 KB
-Actually sent:    46.3 KB
-Saved:           813.9 KB  (94.6%)
-```
+Sample run (`polls=12`, `interval=600ms`):
+
+| Metric | Baseline | Delta-Sync |
+| --- | ---: | ---: |
+| Bytes transferred | 800,936 B | 66,995 B |
+| Payload saved | - | 734,473 B (91.6%) |
+| Avg latency | 8.7 ms | 7.7 ms |
+| P95 latency | 32.9 ms | 19.0 ms |
+| Client CPU time | 142.9 ms | 59.4 ms |
 
 ![Benchmark output](docs/assets/benchmark-proof.png)
+
+See full benchmark details in `docs/benchmark-results.md`.
 
 ## Installation
 
@@ -89,6 +95,16 @@ npm test
 - `X-Delta-Sync: full | patch | full-fallback`
 - `X-Delta-Full-Size`, `X-Delta-Patch-Size`
 
+## Delta Algorithm Strategy
+
+- Structural JSON diff + stable hashing (implemented)
+- Patch-size guard + full fallback (implemented)
+- Rolling-hash chunking (roadmap)
+
+See:
+- `docs/algorithm-strategy.md`
+- `docs/architecture.md`
+
 ## GraphQL Integration
 
 Use the same GraphQL query model and add Delta-Sync transport behavior:
@@ -112,6 +128,15 @@ See `docs/cdn-story.md`.
 - Java Spring Boot: `ports/spring-delta-sync`
 
 See `ports/README.md`.
+
+## Real-world Use Cases
+
+- Operational dashboards
+- Chat/inbox metadata streams
+- Config/state distribution
+- GraphQL polling workloads
+
+See `docs/use-cases.md`.
 
 ## Testing
 
@@ -140,6 +165,10 @@ npm run benchmark -- http://localhost:3000 --polls 20 --interval 1000
 - [Demo Guide](examples/delta-sync-demo/README.md)
 - [GraphQL Guide](examples/graphql/README.md)
 - [CDN Story](docs/cdn-story.md)
+- [Algorithm Strategy](docs/algorithm-strategy.md)
+- [Architecture Diagram](docs/architecture.md)
+- [Benchmark Results](docs/benchmark-results.md)
+- [Use Cases](docs/use-cases.md)
 - [Language Ports](ports/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
