@@ -168,6 +168,183 @@ describe('deltaSync middleware', () => {
     expect(parseBody<{ value: string }>(res)).toEqual({ value: 'y' });
   });
 
+  it('skips diff computation for very large payloads when maxDiffInputBytes is exceeded', async () => {
+    const middleware = deltaSync({
+      maxDiffInputBytes: 100,
+    });
+    const initial = await runRequest(middleware, { value: 'x'.repeat(200) });
+
+    const res = await runRequest(
+      middleware,
+      { value: 'x'.repeat(200), counter: 1 },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.getHeader('x-delta-sync')).toBe('full-skip-large');
+    expect(res.getHeader('content-type')).toContain('application/json');
+  });
+
+  it('uses full fallback when patch savings do not clear minPatchSavingsBytes threshold', async () => {
+    const middleware = deltaSync({
+      minPatchSavingsBytes: 10_000,
+    });
+    const initial = await runRequest(middleware, {
+      count: 1,
+      payload: 'x'.repeat(1000),
+    });
+
+    const res = await runRequest(
+      middleware,
+      {
+        count: 2,
+        payload: 'x'.repeat(1000),
+      },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.getHeader('x-delta-sync')).toBe('full-fallback');
+    expect(res.getHeader('content-type')).toContain('application/json');
+  });
+
+  it('allows patch when savings equal minPatchSavingsBytes threshold', async () => {
+    const probe = deltaSync({ minPatchSavingsBytes: 0 });
+    const probeInitial = await runRequest(probe, {
+      count: 1,
+      payload: 'x'.repeat(1000),
+    });
+    const probePatch = await runRequest(
+      probe,
+      {
+        count: 2,
+        payload: 'x'.repeat(1000),
+      },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': probeInitial.getHeader('etag')!,
+      },
+    );
+
+    const fullBytes = Number.parseInt(probePatch.getHeader('x-delta-full-size') ?? '0', 10);
+    const patchBytes = Number.parseInt(probePatch.getHeader('x-delta-patch-size') ?? '0', 10);
+    const exactThreshold = Math.max(0, fullBytes - patchBytes);
+
+    const middleware = deltaSync({
+      minPatchSavingsBytes: exactThreshold,
+    });
+    const initial = await runRequest(middleware, {
+      count: 1,
+      payload: 'x'.repeat(1000),
+    });
+
+    const res = await runRequest(
+      middleware,
+      {
+        count: 2,
+        payload: 'x'.repeat(1000),
+      },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.getHeader('x-delta-sync')).toBe('patch');
+  });
+
+  it('does not skip diff when payload size is exactly maxDiffInputBytes boundary', async () => {
+    const middleware = deltaSync({
+      maxDiffInputBytes: 100,
+    });
+    const initial = await runRequest(middleware, { value: 'x'.repeat(88) });
+
+    const res = await runRequest(
+      middleware,
+      { value: `${'x'.repeat(87)}y` },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.getHeader('x-delta-sync')).not.toBe('full-skip-large');
+  });
+
+  it('supports per-request tuning overrides for maxDiffInputBytes', async () => {
+    const middleware = deltaSync({
+      maxDiffInputBytes: 100,
+      tuningForRequest: () => ({ maxDiffInputBytes: 10_000 }),
+    });
+    const initial = await runRequest(middleware, { value: 'x'.repeat(200) });
+
+    const res = await runRequest(
+      middleware,
+      { value: 'x'.repeat(200), counter: 1 },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.getHeader('x-delta-sync')).not.toBe('full-skip-large');
+  });
+
+  it('ignores array index paths safely when configured', async () => {
+    const middleware = deltaSync({
+      ignorePaths: ['/items/1'],
+    });
+
+    const initial = await runRequest(middleware, {
+      items: ['a', 'ignore-this', 'c'],
+    });
+
+    const res = await runRequest(
+      middleware,
+      {
+        items: ['a', 'changed-but-ignored', 'c'],
+      },
+      {
+        Accept: 'application/json-patch+json',
+        'If-None-Match': initial.getHeader('etag')!,
+      },
+    );
+
+    expect(res.statusCode).toBe(304);
+  });
+
+  it('avoids patch responses for frequent tiny changes when minPatchSavingsBytes is high', async () => {
+    const middleware = deltaSync({
+      minPatchSavingsBytes: 500,
+    });
+
+    let previous = await runRequest(middleware, { tick: 0, payload: 'x'.repeat(80) });
+    let patchCount = 0;
+    for (let i = 1; i <= 5; i += 1) {
+      const res = await runRequest(
+        middleware,
+        { tick: i, payload: 'x'.repeat(80) },
+        {
+          Accept: 'application/json-patch+json',
+          'If-None-Match': previous.getHeader('etag')!,
+        },
+      );
+      if (res.getHeader('x-delta-sync') === 'patch') patchCount += 1;
+      previous = res;
+    }
+
+    expect(patchCount).toBe(0);
+  });
+
   it('generates stable ETags for nested objects with different key order', async () => {
     const middlewareA = deltaSync();
     const middlewareB = deltaSync();

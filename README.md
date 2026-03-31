@@ -48,6 +48,26 @@ Client:
 const { data } = useDeltaSync('/api/dashboard')
 ```
 
+## Configuration
+
+```ts
+app.use('/api', deltaSync({
+  ignorePaths: ['/meta/timestamp', '/meta/requestId'],
+  maxDiffInputBytes: 512_000,
+  minPatchSavingsBytes: 16,
+  // optional per-route tuning
+  tuningForRequest: (req) => req.path.startsWith('/api/reports')
+    ? { maxDiffInputBytes: 256_000, minPatchSavingsBytes: 64 }
+    : undefined,
+}))
+```
+
+Recommended starting points:
+
+- High-traffic dashboards: `maxDiffInputBytes: 512_000`, `minPatchSavingsBytes: 16`
+- Occasional large report endpoints: `maxDiffInputBytes: 256_000`, `minPatchSavingsBytes: 64`
+- Low-traffic/internal APIs: `maxDiffInputBytes: Infinity`, `minPatchSavingsBytes: 0`
+
 ## Benchmark Proof
 
 Sample run (`polls=12`, `interval=600ms`):
@@ -85,15 +105,16 @@ npm test
 
 ## HTTP Contract
 
-- Request headers:
+Request headers:
 - `If-None-Match`
 - `Accept: application/json-patch+json`
 
-- Response headers:
+Response headers:
 - `ETag`
 - `Vary: If-None-Match, Accept`
-- `X-Delta-Sync: full | patch | full-fallback`
-- `X-Delta-Full-Size`, `X-Delta-Patch-Size`
+- `X-Delta-Sync: full | patch | full-fallback | full-skip-large`
+- `X-Delta-Full-Size`
+- `X-Delta-Patch-Size` (patch responses only)
 
 ## Delta Algorithm Strategy
 

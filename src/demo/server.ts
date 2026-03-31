@@ -51,6 +51,8 @@ setInterval(() => {
 const deltaSyncMiddleware = deltaSync({
   ignorePaths: ['/meta/timestamp', '/meta/requestId'],
   scopeKey: (req) => req.get('x-user-id') ?? 'anon',
+  maxDiffInputBytes: 512_000,
+  minPatchSavingsBytes: 16,
   enableMetrics: true,
 });
 

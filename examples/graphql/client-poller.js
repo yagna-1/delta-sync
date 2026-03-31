@@ -1,4 +1,6 @@
-import { applyOperation } from 'fast-json-patch';
+import fastJsonPatch from 'fast-json-patch';
+
+const { applyOperation } = fastJsonPatch;
 
 const mode = process.argv[2] ?? 'delta';
 const baseUrl = process.argv[3] ?? 'http://localhost:4100';

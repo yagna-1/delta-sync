@@ -76,7 +76,7 @@ class SnapshotCache {
   }
 }
 
-function deltaSync({ ignorePaths = [] } = {}) {
+function deltaSync({ ignorePaths = [], maxDiffInputBytes = Number.POSITIVE_INFINITY, minPatchSavingsBytes = 0 } = {}) {
   const snapshots = new SnapshotCache();
 
   return function middleware(req, res, next) {
@@ -102,28 +102,32 @@ function deltaSync({ ignorePaths = [] } = {}) {
         }
 
         if (acceptsPatch && clientEtag) {
-          const prev = snapshots.get(keyOf(clientEtag));
-          if (prev !== undefined) {
-            const delta = differ.diff(prev, diffBody);
-            if (!delta) {
-              return res.status(304).end();
+          if (fullLen > maxDiffInputBytes) {
+            res.setHeader('X-Delta-Sync', 'full-skip-large');
+          } else {
+            const prev = snapshots.get(keyOf(clientEtag));
+            if (prev !== undefined) {
+              const delta = differ.diff(prev, diffBody);
+              if (!delta) {
+                return res.status(304).end();
+              }
+
+              const patch = formatJsonPatch(delta, prev);
+              const patchBody = JSON.stringify(patch);
+              const patchLen = Buffer.byteLength(patchBody);
+
+              if (patchLen + minPatchSavingsBytes <= fullLen) {
+                snapshots.set(keyOf(etag), diffBody);
+                res.setHeader('ETag', etag);
+                res.setHeader('Content-Type', 'application/json-patch+json');
+                res.setHeader('X-Delta-Sync', 'patch');
+                res.setHeader('X-Delta-Full-Size', String(fullLen));
+                res.setHeader('X-Delta-Patch-Size', String(patchLen));
+                return res.status(200).send(patchBody);
+              }
+
+              res.setHeader('X-Delta-Sync', 'full-fallback');
             }
-
-            const patch = formatJsonPatch(delta, prev);
-            const patchBody = JSON.stringify(patch);
-            const patchLen = Buffer.byteLength(patchBody);
-
-            if (patchLen < fullLen) {
-              snapshots.set(keyOf(etag), diffBody);
-              res.setHeader('ETag', etag);
-              res.setHeader('Content-Type', 'application/json-patch+json');
-              res.setHeader('X-Delta-Sync', 'patch');
-              res.setHeader('X-Delta-Full-Size', String(fullLen));
-              res.setHeader('X-Delta-Patch-Size', String(patchLen));
-              return res.status(200).send(patchBody);
-            }
-
-            res.setHeader('X-Delta-Sync', 'full-fallback');
           }
         }
 
@@ -166,6 +170,7 @@ let alerts = [
   { id: 'a1', level: 'info', text: 'All systems nominal' },
   { id: 'a2', level: 'warn', text: 'Slow query detected on analytics shard' },
 ];
+let mixedRequests = 0;
 
 setInterval(() => {
   activeUsers += 1;
@@ -197,6 +202,21 @@ function makeDashboard() {
   };
 }
 
+function makeHeavyDashboard() {
+  return {
+    ...makeDashboard(),
+    reportBlob: 'R'.repeat(700_000),
+  };
+}
+
+function makeMixedDashboard() {
+  mixedRequests += 1;
+  if (mixedRequests % 5 === 0) {
+    return makeHeavyDashboard();
+  }
+  return makeDashboard();
+}
+
 app.get('/api/dashboard-full', (_req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Type', 'application/json');
@@ -204,9 +224,23 @@ app.get('/api/dashboard-full', (_req, res) => {
   res.status(200).send(JSON.stringify(makeDashboard()));
 });
 
-app.use('/api', deltaSync({ ignorePaths: ['/meta/timestamp', '/meta/requestId'] }));
+app.get('/api/dashboard-mixed-full', (_req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('X-Delta-Sync', 'full-only');
+  res.status(200).send(JSON.stringify(makeMixedDashboard()));
+});
+
+app.use('/api', deltaSync({
+  ignorePaths: ['/meta/timestamp', '/meta/requestId'],
+  maxDiffInputBytes: 512_000,
+  minPatchSavingsBytes: 16,
+}));
 app.get('/api/dashboard', (_req, res) => {
   res.json(makeDashboard());
+});
+app.get('/api/dashboard-mixed', (_req, res) => {
+  res.json(makeMixedDashboard());
 });
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);

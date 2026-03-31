@@ -1,4 +1,9 @@
-export { deltaSync, computeETag, type DeltaSyncOptions } from './middleware/deltaSync.js';
+export {
+  deltaSync,
+  computeETag,
+  type DeltaSyncOptions,
+  type DeltaSyncRequestTuning,
+} from './middleware/deltaSync.js';
 export {
   makeLRUStore,
   makeRedisStore,

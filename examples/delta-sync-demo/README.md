@@ -40,7 +40,7 @@ npm run benchmark -- http://localhost:3000 --polls 20 --interval 1000
 
 Delta endpoint headers:
 - `ETag`
-- `X-Delta-Sync: full | patch | full-fallback`
+- `X-Delta-Sync: full | patch | full-fallback | full-skip-large`
 - `X-Delta-Full-Size`
 - `X-Delta-Patch-Size`
 

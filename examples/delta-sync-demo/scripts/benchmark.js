@@ -37,6 +37,8 @@ async function runDelta(url, polls, intervalMs) {
   let lastKnownFull = 0;
   let patch = 0;
   let full = 0;
+  let fullFallback = 0;
+  let fullSkipLarge = 0;
   let notModified = 0;
   const allLatencies = [];
   const fullLatencies = [];
@@ -74,7 +76,13 @@ async function runDelta(url, polls, intervalMs) {
       etag = res.headers.get('etag');
       console.log(`[${i + 1}] PATCH  ${bodyBytes} B  ${elapsed}ms (${mode})`);
     } else {
-      full += 1;
+      if (mode === 'full-fallback') {
+        fullFallback += 1;
+      } else if (mode === 'full-skip-large') {
+        fullSkipLarge += 1;
+      } else {
+        full += 1;
+      }
       fullLatencies.push(elapsedMs);
       actual += bodyBytes;
       equivalent += bodyBytes;
@@ -97,6 +105,8 @@ async function runDelta(url, polls, intervalMs) {
     equivalent,
     patch,
     full,
+    fullFallback,
+    fullSkipLarge,
     notModified,
     allLatencies,
     fullLatencies,
@@ -122,13 +132,17 @@ function p95(values) {
 const baseUrl = process.argv[2] ?? 'http://localhost:3000';
 const polls = Number.parseInt(getArg('--polls', '20'), 10);
 const interval = Number.parseInt(getArg('--interval', '1000'), 10);
+const fullPath = getArg('--full-path', '/api/dashboard-full');
+const deltaPath = getArg('--delta-path', '/api/dashboard');
 
-const fullUrl = `${baseUrl}/api/dashboard-full`;
-const deltaUrl = `${baseUrl}/api/dashboard`;
+const fullUrl = `${baseUrl}${fullPath}`;
+const deltaUrl = `${baseUrl}${deltaPath}`;
 
 console.log(`\nDelta-Sync Demo Benchmark`);
 console.log(`Base URL: ${baseUrl}`);
-console.log(`Polls: ${polls}, Interval: ${interval}ms\n`);
+console.log(`Polls: ${polls}, Interval: ${interval}ms`);
+console.log(`Full endpoint: ${fullPath}`);
+console.log(`Delta endpoint: ${deltaPath}\n`);
 
 const fullStats = await runFull(fullUrl, polls, interval);
 console.log(`\nBaseline full polling bytes: ${fullStats.bytes} B`);
@@ -143,6 +157,8 @@ const savedPct = deltaStats.equivalent > 0
 
 console.log('\nSummary');
 console.log(`Full responses: ${deltaStats.full}`);
+console.log(`Full fallback responses: ${deltaStats.fullFallback}`);
+console.log(`Full skip-large responses: ${deltaStats.fullSkipLarge}`);
 console.log(`Patch responses: ${deltaStats.patch}`);
 console.log(`304 responses: ${deltaStats.notModified}`);
 console.log(`Would-have-sent (full): ${deltaStats.equivalent} B`);
