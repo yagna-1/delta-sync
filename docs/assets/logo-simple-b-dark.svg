@@ -1,0 +1,15 @@
+<svg width="980" height="200" viewBox="0 0 980 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Delta-Sync simple logo B dark</title>
+  <desc id="desc">Monoline monogram and restrained wordmark.</desc>
+
+  <g transform="translate(26 24)">
+    <rect x="0" y="0" width="132" height="132" rx="28" stroke="#E5E7EB" stroke-width="8"/>
+    <path d="M66 24L104 100H28L66 24Z" stroke="#E5E7EB" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M95 58L112 58" stroke="#E5E7EB" stroke-width="8" stroke-linecap="round"/>
+    <path d="M20 80L37 80" stroke="#E5E7EB" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(210 58)">
+    <text x="0" y="68" font-family="'Inter','Avenir Next','Segoe UI',sans-serif" font-size="72" font-weight="560" letter-spacing="-1.1" fill="#E5E7EB">Delta-Sync</text>
+  </g>
+</svg>

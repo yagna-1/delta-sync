@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-simple-b-dark.svg">
+    <img src="docs/assets/logo-simple-b-light.svg" alt="Delta-Sync logo" width="760">
+  </picture>
+</p>
+
 # Stop sending 42KB every 5 seconds
 
 Delta-Sync reduces API bandwidth by 90-99% without WebSockets.
