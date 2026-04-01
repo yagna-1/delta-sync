@@ -17,7 +17,7 @@ Positioning: **Drop-in delta-sync layer for REST APIs**.
 - Return `304 Not Modified` when data is unchanged.
 - Preserve standard HTTP semantics (`ETag`, `If-None-Match`, `Vary`).
 
-## Demo (Instant Aha)
+## Demo
 
 ```bash
 git clone https://github.com/your-org/delta-sync.git
